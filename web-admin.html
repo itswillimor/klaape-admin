@@ -1,0 +1,650 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Klaape Admin</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: Arial, sans-serif;
+      background-color: #f8f9fa;
+    }
+    #root {
+      height: 100vh;
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <!-- React and ReactDOM -->
+  <script src="https://unpkg.com/react@17/umd/react.development.js"></script>
+  <script src="https://unpkg.com/react-dom@17/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <!-- AsyncStorage polyfill for web -->
+  <script>
+    // Simple AsyncStorage polyfill for web
+    window.AsyncStorage = {
+      getItem: async (key) => {
+        try {
+          return localStorage.getItem(key);
+        } catch (e) {
+          console.error('Error getting item from AsyncStorage:', e);
+          return null;
+        }
+      },
+      setItem: async (key, value) => {
+        try {
+          return localStorage.setItem(key, value);
+        } catch (e) {
+          console.error('Error setting item in AsyncStorage:', e);
+        }
+      },
+      removeItem: async (key) => {
+        try {
+          return localStorage.removeItem(key);
+        } catch (e) {
+          console.error('Error removing item from AsyncStorage:', e);
+        }
+      }
+    };
+  </script>
+
+  <!-- Auth Service -->
+  <script type="text/babel">
+    // Keys for storage
+    const USER_KEY = '@klaape_users';
+    const CURRENT_USER_KEY = '@klaape_current_user';
+
+    // Get all users
+    const getUsers = async () => {
+      try {
+        const usersJson = await AsyncStorage.getItem(USER_KEY);
+        return usersJson ? JSON.parse(usersJson) : {};
+      } catch (error) {
+        console.error('Error getting users:', error);
+        return {};
+      }
+    };
+
+    // Save users
+    const saveUsers = async (users) => {
+      try {
+        await AsyncStorage.setItem(USER_KEY, JSON.stringify(users));
+      } catch (error) {
+        console.error('Error saving users:', error);
+      }
+    };
+
+    // Create admin user if none exists
+    const initializeAdmin = async () => {
+      try {
+        const users = await getUsers();
+        const adminExists = Object.values(users).some(user => user.role === 'admin');
+        
+        if (!adminExists) {
+          const adminEmail = 'admin@klaape.com';
+          const adminUser = {
+            id: 'admin-' + Date.now().toString(),
+            email: adminEmail,
+            password: 'admin123',
+            username: 'admin',
+            firstName: 'Admin',
+            lastName: 'User',
+            fullName: 'Admin User',
+            dateOfBirth: new Date().toISOString(),
+            role: 'admin',
+            profileCompleted: true,
+            createdAt: new Date().toISOString(),
+            emailVerified: true,
+            verificationCode: '123456'
+          };
+          
+          users[adminEmail] = adminUser;
+          await saveUsers(users);
+          console.log('Admin user created successfully');
+          return adminUser;
+        }
+        
+        return null;
+      } catch (error) {
+        console.error('Error creating admin:', error);
+        return null;
+      }
+    };
+
+    // Get current user
+    const getCurrentUser = async () => {
+      try {
+        const userJson = await AsyncStorage.getItem(CURRENT_USER_KEY);
+        return userJson ? JSON.parse(userJson) : null;
+      } catch (error) {
+        console.error('Error getting current user:', error);
+        return null;
+      }
+    };
+
+    // Delete user
+    const deleteUser = async (email) => {
+      try {
+        const users = await getUsers();
+        if (!users[email]) {
+          throw new Error('User not found');
+        }
+        
+        delete users[email];
+        await saveUsers(users);
+        return true;
+      } catch (error) {
+        console.error('Error deleting user:', error);
+        throw error;
+      }
+    };
+
+    // Update user by admin
+    const updateUserByAdmin = async (email, updates) => {
+      try {
+        const users = await getUsers();
+        if (!users[email]) {
+          throw new Error('User not found');
+        }
+        
+        users[email] = { ...users[email], ...updates };
+        await saveUsers(users);
+        return users[email];
+      } catch (error) {
+        console.error('Error updating user:', error);
+        throw error;
+      }
+    };
+
+    // Check if current user is admin
+    const isAdmin = async () => {
+      const currentUser = await getCurrentUser();
+      return currentUser && currentUser.role === 'admin';
+    };
+
+    // Export auth service
+    window.authService = {
+      getUsers,
+      saveUsers,
+      initializeAdmin,
+      getCurrentUser,
+      deleteUser,
+      updateUserByAdmin,
+      isAdmin,
+      getAllUsers: getUsers
+    };
+  </script>
+
+  <!-- Admin Component -->
+  <script type="text/babel">
+    const { useState, useEffect } = React;
+    const { 
+      getAllUsers, 
+      deleteUser, 
+      updateUserByAdmin, 
+      initializeAdmin 
+    } = window.authService;
+
+    function AdminWeb() {
+      const [users, setUsers] = useState([]);
+      const [loading, setLoading] = useState(true);
+      const [searchQuery, setSearchQuery] = useState('');
+      const [selectedUser, setSelectedUser] = useState(null);
+      const [password, setPassword] = useState('');
+      const [authenticated, setAuthenticated] = useState(false);
+
+      useEffect(() => {
+        // Initialize admin user
+        initializeAdmin();
+      }, []);
+
+      const handleLogin = (e) => {
+        e.preventDefault();
+        if (password === 'admin123') {
+          setAuthenticated(true);
+          loadUsers();
+        } else {
+          alert('Invalid password');
+        }
+      };
+
+      const loadUsers = async () => {
+        try {
+          setLoading(true);
+          const usersObj = await getAllUsers();
+          const usersArray = Object.values(usersObj);
+          setUsers(usersArray);
+        } catch (error) {
+          alert('Failed to load users');
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      const handleDeleteUser = async (user) => {
+        if (window.confirm(`Are you sure you want to delete ${user.username}?`)) {
+          try {
+            await deleteUser(user.email);
+            alert('User deleted successfully');
+            loadUsers();
+          } catch (error) {
+            alert(error.message || 'Failed to delete user');
+          }
+        }
+      };
+
+      const handleVerifyUser = async (user) => {
+        try {
+          await updateUserByAdmin(user.email, { emailVerified: true });
+          alert(`${user.username} has been verified`);
+          loadUsers();
+        } catch (error) {
+          alert(error.message || 'Failed to verify user');
+        }
+      };
+
+      const handleUpdateRole = async (user, role) => {
+        if (window.confirm(`Change ${user.username}'s role to ${role}?`)) {
+          try {
+            await updateUserByAdmin(user.email, { role });
+            alert(`Role updated to ${role}`);
+            loadUsers();
+          } catch (error) {
+            alert(error.message || 'Failed to update role');
+          }
+        }
+      };
+
+      const filteredUsers = users.filter(user => {
+        const query = searchQuery.toLowerCase();
+        return (
+          user.username?.toLowerCase().includes(query) ||
+          user.email?.toLowerCase().includes(query) ||
+          user.firstName?.toLowerCase().includes(query) ||
+          user.lastName?.toLowerCase().includes(query)
+        );
+      });
+
+      if (!authenticated) {
+        return (
+          <div style={styles.loginContainer}>
+            <div style={styles.loginBox}>
+              <h1 style={styles.loginTitle}>Klaape Admin</h1>
+              <form onSubmit={handleLogin} style={styles.loginForm}>
+                <input 
+                  type="password" 
+                  placeholder="Admin Password" 
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  style={styles.loginInput}
+                />
+                <button type="submit" style={styles.loginButton}>Login</button>
+              </form>
+            </div>
+          </div>
+        );
+      }
+
+      return (
+        <div style={styles.container}>
+          <div style={styles.header}>
+            <h1 style={styles.title}>Klaape Admin Dashboard</h1>
+            <button onClick={loadUsers} style={styles.refreshButton}>Refresh</button>
+          </div>
+          
+          <div style={styles.searchContainer}>
+            <input
+              type="text"
+              placeholder="Search users..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              style={styles.searchInput}
+            />
+          </div>
+          
+          <div style={styles.statsContainer}>
+            <div style={styles.statCard}>
+              <div style={styles.statNumber}>{users.length}</div>
+              <div style={styles.statLabel}>Total Users</div>
+            </div>
+            <div style={styles.statCard}>
+              <div style={styles.statNumber}>
+                {users.filter(user => user.emailVerified).length}
+              </div>
+              <div style={styles.statLabel}>Verified</div>
+            </div>
+            <div style={styles.statCard}>
+              <div style={styles.statNumber}>
+                {users.filter(user => user.role === 'pro').length}
+              </div>
+              <div style={styles.statLabel}>Pro Users</div>
+            </div>
+          </div>
+
+          {loading ? (
+            <div style={styles.loading}>Loading...</div>
+          ) : (
+            <div style={styles.userList}>
+              {filteredUsers.length === 0 ? (
+                <div style={styles.emptyText}>No users found</div>
+              ) : (
+                filteredUsers.map(user => (
+                  <div key={user.id} style={styles.userCard}>
+                    <div style={styles.userHeader} onClick={() => setSelectedUser(selectedUser === user ? null : user)}>
+                      <div>
+                        <div style={styles.username}>{user.username}</div>
+                        <div style={styles.email}>{user.email}</div>
+                      </div>
+                      <div style={{
+                        ...styles.roleBadge,
+                        ...(user.role === 'admin' ? styles.adminBadge : 
+                          user.role === 'pro' ? styles.proBadge :
+                          user.role === 'business' ? styles.businessBadge :
+                          styles.regularBadge)
+                      }}>
+                        {user.role}
+                      </div>
+                    </div>
+
+                    {selectedUser === user && (
+                      <div style={styles.userDetails}>
+                        <div style={styles.detailRow}>
+                          <span style={styles.detailLabel}>Name:</span> 
+                          <span style={styles.detailText}>{user.fullName}</span>
+                        </div>
+                        <div style={styles.detailRow}>
+                          <span style={styles.detailLabel}>Verified:</span> 
+                          <span style={styles.detailText}>{user.emailVerified ? 'Yes' : 'No'}</span>
+                        </div>
+                        <div style={styles.detailRow}>
+                          <span style={styles.detailLabel}>Profile Completed:</span> 
+                          <span style={styles.detailText}>{user.profileCompleted ? 'Yes' : 'No'}</span>
+                        </div>
+                        <div style={styles.detailRow}>
+                          <span style={styles.detailLabel}>Created:</span> 
+                          <span style={styles.detailText}>{new Date(user.createdAt).toLocaleString()}</span>
+                        </div>
+                        
+                        <div style={styles.actionButtons}>
+                          {!user.emailVerified && (
+                            <button 
+                              style={{...styles.actionButton, ...styles.verifyButton}}
+                              onClick={() => handleVerifyUser(user)}
+                            >
+                              Verify
+                            </button>
+                          )}
+                          
+                          <div style={styles.roleButtons}>
+                            <button 
+                              style={{
+                                ...styles.roleButton, 
+                                ...(user.role === 'regular' ? styles.activeRoleButton : {})
+                              }}
+                              onClick={() => handleUpdateRole(user, 'regular')}
+                            >
+                              Regular
+                            </button>
+                            <button 
+                              style={{
+                                ...styles.roleButton, 
+                                ...(user.role === 'pro' ? styles.activeRoleButton : {})
+                              }}
+                              onClick={() => handleUpdateRole(user, 'pro')}
+                            >
+                              Pro
+                            </button>
+                            <button 
+                              style={{
+                                ...styles.roleButton, 
+                                ...(user.role === 'business' ? styles.activeRoleButton : {})
+                              }}
+                              onClick={() => handleUpdateRole(user, 'business')}
+                            >
+                              Business
+                            </button>
+                          </div>
+                          
+                          {user.role !== 'admin' && (
+                            <button 
+                              style={{...styles.actionButton, ...styles.deleteButton}}
+                              onClick={() => handleDeleteUser(user)}
+                            >
+                              Delete
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    const styles = {
+      container: {
+        maxWidth: '1200px',
+        margin: '0 auto',
+        padding: '20px',
+        fontFamily: 'Arial, sans-serif',
+      },
+      header: {
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: '20px',
+      },
+      title: {
+        fontSize: '24px',
+        color: '#1B0033',
+        margin: 0,
+      },
+      refreshButton: {
+        backgroundColor: '#1B0033',
+        color: 'white',
+        border: 'none',
+        padding: '8px 16px',
+        borderRadius: '4px',
+        cursor: 'pointer',
+      },
+      searchContainer: {
+        marginBottom: '20px',
+      },
+      searchInput: {
+        width: '100%',
+        padding: '12px',
+        borderRadius: '4px',
+        border: '1px solid #ddd',
+        fontSize: '16px',
+      },
+      statsContainer: {
+        display: 'flex',
+        justifyContent: 'space-between',
+        marginBottom: '20px',
+      },
+      statCard: {
+        backgroundColor: 'white',
+        borderRadius: '8px',
+        padding: '16px',
+        flex: 1,
+        margin: '0 8px',
+        textAlign: 'center',
+        boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+      },
+      statNumber: {
+        fontSize: '24px',
+        fontWeight: 'bold',
+        color: '#1B0033',
+      },
+      statLabel: {
+        fontSize: '14px',
+        color: '#666',
+      },
+      userList: {
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '12px',
+      },
+      userCard: {
+        backgroundColor: 'white',
+        borderRadius: '8px',
+        padding: '16px',
+        boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+      },
+      userHeader: {
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        cursor: 'pointer',
+      },
+      username: {
+        fontSize: '18px',
+        fontWeight: 'bold',
+        color: '#333',
+      },
+      email: {
+        fontSize: '14px',
+        color: '#666',
+      },
+      roleBadge: {
+        padding: '4px 8px',
+        borderRadius: '12px',
+        minWidth: '80px',
+        textAlign: 'center',
+        color: 'white',
+        fontWeight: 'bold',
+        fontSize: '12px',
+      },
+      adminBadge: {
+        backgroundColor: '#dc3545',
+      },
+      proBadge: {
+        backgroundColor: '#9747FF',
+      },
+      businessBadge: {
+        backgroundColor: '#ffc107',
+      },
+      regularBadge: {
+        backgroundColor: '#6c757d',
+      },
+      userDetails: {
+        marginTop: '12px',
+        paddingTop: '12px',
+        borderTop: '1px solid #eee',
+      },
+      detailRow: {
+        marginBottom: '4px',
+      },
+      detailLabel: {
+        fontSize: '14px',
+        color: '#666',
+      },
+      detailText: {
+        color: '#333',
+        fontWeight: '500',
+      },
+      actionButtons: {
+        marginTop: '12px',
+      },
+      actionButton: {
+        padding: '8px',
+        borderRadius: '4px',
+        border: 'none',
+        color: 'white',
+        fontWeight: 'bold',
+        cursor: 'pointer',
+        margin: '4px 0',
+        width: '100%',
+      },
+      verifyButton: {
+        backgroundColor: '#28a745',
+      },
+      deleteButton: {
+        backgroundColor: '#dc3545',
+      },
+      roleButtons: {
+        display: 'flex',
+        justifyContent: 'space-between',
+        margin: '8px 0',
+      },
+      roleButton: {
+        padding: '6px 12px',
+        borderRadius: '4px',
+        backgroundColor: '#f0f0f0',
+        flex: 1,
+        margin: '0 2px',
+        border: 'none',
+        cursor: 'pointer',
+      },
+      activeRoleButton: {
+        backgroundColor: '#1B0033',
+        color: 'white',
+      },
+      emptyText: {
+        textAlign: 'center',
+        marginTop: '40px',
+        color: '#666',
+        fontSize: '16px',
+      },
+      loading: {
+        textAlign: 'center',
+        marginTop: '40px',
+        color: '#666',
+        fontSize: '16px',
+      },
+      loginContainer: {
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'center',
+        height: '100vh',
+        backgroundColor: '#f8f9fa',
+      },
+      loginBox: {
+        backgroundColor: 'white',
+        padding: '40px',
+        borderRadius: '8px',
+        boxShadow: '0 4px 10px rgba(0,0,0,0.1)',
+        width: '100%',
+        maxWidth: '400px',
+        textAlign: 'center',
+      },
+      loginTitle: {
+        color: '#1B0033',
+        marginBottom: '30px',
+      },
+      loginForm: {
+        display: 'flex',
+        flexDirection: 'column',
+      },
+      loginInput: {
+        padding: '12px',
+        borderRadius: '4px',
+        border: '1px solid #ddd',
+        fontSize: '16px',
+        marginBottom: '20px',
+      },
+      loginButton: {
+        backgroundColor: '#1B0033',
+        color: 'white',
+        border: 'none',
+        padding: '12px',
+        borderRadius: '4px',
+        fontSize: '16px',
+        cursor: 'pointer',
+      },
+    };
+
+    // Render the app
+    ReactDOM.render(<AdminWeb />, document.getElementById('root'));
+  </script>
+</body>
+</html>

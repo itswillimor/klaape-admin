@@ -24,159 +24,49 @@
   <script src="https://unpkg.com/react-dom@17/umd/react-dom.development.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
-  <!-- AsyncStorage polyfill for web -->
+  <!-- API Service -->
   <script>
-    // Simple AsyncStorage polyfill for web
-    window.AsyncStorage = {
-      getItem: async (key) => {
-        try {
-          return localStorage.getItem(key);
-        } catch (e) {
-          console.error('Error getting item from AsyncStorage:', e);
-          return null;
-        }
-      },
-      setItem: async (key, value) => {
-        try {
-          return localStorage.setItem(key, value);
-        } catch (e) {
-          console.error('Error setting item in AsyncStorage:', e);
-        }
-      },
-      removeItem: async (key) => {
-        try {
-          return localStorage.removeItem(key);
-        } catch (e) {
-          console.error('Error removing item from AsyncStorage:', e);
-        }
-      }
-    };
-  </script>
-
-  <!-- Auth Service -->
-  <script type="text/babel">
-    // Keys for storage
-    const USER_KEY = '@klaape_users';
-    const CURRENT_USER_KEY = '@klaape_current_user';
-
-    // Get all users
-    const getUsers = async () => {
-      try {
-        const usersJson = await AsyncStorage.getItem(USER_KEY);
-        return usersJson ? JSON.parse(usersJson) : {};
-      } catch (error) {
-        console.error('Error getting users:', error);
-        return {};
-      }
-    };
-
-    // Save users
-    const saveUsers = async (users) => {
-      try {
-        await AsyncStorage.setItem(USER_KEY, JSON.stringify(users));
-      } catch (error) {
-        console.error('Error saving users:', error);
-      }
-    };
-
-    // Create admin user if none exists
-    const initializeAdmin = async () => {
-      try {
-        const users = await getUsers();
-        const adminExists = Object.values(users).some(user => user.role === 'admin');
-        
-        if (!adminExists) {
-          const adminEmail = 'admin@klaape.com';
-          const adminUser = {
-            id: 'admin-' + Date.now().toString(),
-            email: adminEmail,
-            password: 'admin123',
-            username: 'admin',
-            firstName: 'Admin',
-            lastName: 'User',
-            fullName: 'Admin User',
-            dateOfBirth: new Date().toISOString(),
-            role: 'admin',
-            profileCompleted: true,
-            createdAt: new Date().toISOString(),
-            emailVerified: true,
-            verificationCode: '123456'
-          };
-          
-          users[adminEmail] = adminUser;
-          await saveUsers(users);
-          console.log('Admin user created successfully');
-          return adminUser;
-        }
-        
-        return null;
-      } catch (error) {
-        console.error('Error creating admin:', error);
-        return null;
-      }
-    };
-
-    // Get current user
-    const getCurrentUser = async () => {
-      try {
-        const userJson = await AsyncStorage.getItem(CURRENT_USER_KEY);
-        return userJson ? JSON.parse(userJson) : null;
-      } catch (error) {
-        console.error('Error getting current user:', error);
-        return null;
-      }
-    };
-
-    // Delete user
-    const deleteUser = async (email) => {
-      try {
-        const users = await getUsers();
-        if (!users[email]) {
-          throw new Error('User not found');
-        }
-        
-        delete users[email];
-        await saveUsers(users);
-        return true;
-      } catch (error) {
-        console.error('Error deleting user:', error);
-        throw error;
-      }
-    };
-
-    // Update user by admin
-    const updateUserByAdmin = async (email, updates) => {
-      try {
-        const users = await getUsers();
-        if (!users[email]) {
-          throw new Error('User not found');
-        }
-        
-        users[email] = { ...users[email], ...updates };
-        await saveUsers(users);
-        return users[email];
-      } catch (error) {
-        console.error('Error updating user:', error);
-        throw error;
-      }
-    };
-
-    // Check if current user is admin
-    const isAdmin = async () => {
-      const currentUser = await getCurrentUser();
-      return currentUser && currentUser.role === 'admin';
-    };
-
-    // Export auth service
+    // API-based auth service
     window.authService = {
-      getUsers,
-      saveUsers,
-      initializeAdmin,
-      getCurrentUser,
-      deleteUser,
-      updateUserByAdmin,
-      isAdmin,
-      getAllUsers: getUsers
+      getAllUsers: async () => {
+        try {
+          const response = await fetch('/api/users');
+          return await response.json();
+        } catch (error) {
+          console.error('Error fetching users:', error);
+          return {};
+        }
+      },
+      deleteUser: async (email) => {
+        try {
+          const response = await fetch(`/api/users/${email}`, {
+            method: 'DELETE'
+          });
+          if (!response.ok) throw new Error('Failed to delete user');
+          return true;
+        } catch (error) {
+          console.error('Error deleting user:', error);
+          throw error;
+        }
+      },
+      updateUserByAdmin: async (email, updates) => {
+        try {
+          const response = await fetch(`/api/users/${email}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(updates)
+          });
+          if (!response.ok) throw new Error('Failed to update user');
+          return await response.json();
+        } catch (error) {
+          console.error('Error updating user:', error);
+          throw error;
+        }
+      },
+      initializeAdmin: async () => {
+        // Admin is initialized on the server
+        return null;
+      }
     };
   </script>
 
